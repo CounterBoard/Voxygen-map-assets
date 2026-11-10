@@ -1,0 +1,10 @@
+/world-map/versions/*
+  Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET, HEAD, OPTIONS
+  Access-Control-Allow-Headers: Content-Type, If-None-Match
+  X-Content-Type-Options: nosniff
+  Cache-Control: public, max-age=31536000, immutable
+
+/world-map/manifest.json
+  Access-Control-Allow-Origin: *
+  Cache-Control: public, max-age=30, must-revalidate
