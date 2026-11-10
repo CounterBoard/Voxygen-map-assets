@@ -38,9 +38,16 @@ jobs:
       - name: Download uploaded source map
         env:
           IMAGE_URL: ${{ inputs.image_url }}
+          MAP_SOURCE_GITHUB_TOKEN: ${{ secrets.MAP_SOURCE_GITHUB_TOKEN }}
         run: |
           mkdir -p work
-          curl --fail --location --retry 3 --retry-delay 2 "$IMAGE_URL" --output work/source-map
+          if [ -n "$MAP_SOURCE_GITHUB_TOKEN" ]; then
+            curl --fail --location --retry 3 --retry-delay 2 \
+              --header "Authorization: Bearer $MAP_SOURCE_GITHUB_TOKEN" \
+              "$IMAGE_URL" --output work/source-map
+          else
+            curl --fail --location --retry 3 --retry-delay 2 "$IMAGE_URL" --output work/source-map
+          fi
           test -s work/source-map
 
       - name: Generate Deep Zoom tiles and manifest
