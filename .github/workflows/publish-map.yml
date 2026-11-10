@@ -48,8 +48,12 @@ jobs:
 
           url = os.environ["IMAGE_URL"]
           parsed = urlparse(url)
-          if parsed.scheme != "https" or parsed.hostname != "github.com":
-              raise SystemExit("The source image must be a HTTPS GitHub Release asset URL")
+          if (
+              parsed.scheme != "https"
+              or parsed.hostname != "github.com"
+              or not parsed.path.startswith("/CounterBoard/Voxygen-map-storage/releases/download/")
+          ):
+              raise SystemExit("The source image must be a HTTPS Release asset from CounterBoard/Voxygen-map-storage")
 
           headers = {
               "User-Agent": "Voxygen-Map-Pipeline/1.0",
