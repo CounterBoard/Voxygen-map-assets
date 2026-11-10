@@ -33,7 +33,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install image processor
-        run: python -m pip install --upgrade Pillow
+        run: python -m pip install --upgrade Pillow requests
 
       - name: Download uploaded source map
         env:
@@ -41,15 +41,47 @@ jobs:
           MAP_SOURCE_GITHUB_TOKEN: ${{ secrets.MAP_SOURCE_GITHUB_TOKEN }}
         run: |
           mkdir -p work
-          if [ -n "$MAP_SOURCE_GITHUB_TOKEN" ]; then
-            curl --fail --location --retry 3 --retry-delay 2 \
-              --header "Authorization: Bearer $MAP_SOURCE_GITHUB_TOKEN" \
-              "$IMAGE_URL" --output work/source-map
-          else
-            curl --fail --location --retry 3 --retry-delay 2 "$IMAGE_URL" --output work/source-map
-          fi
-          test -s work/source-map
+          python - <<'PY'
+          import os
+          from urllib.parse import urlparse
+          import requests
 
+          url = os.environ["IMAGE_URL"]
+          parsed = urlparse(url)
+          if parsed.scheme != "https" or parsed.hostname != "github.com":
+              raise SystemExit("The source image must be a HTTPS GitHub Release asset URL")
+
+          headers = {
+              "User-Agent": "Voxygen-Map-Pipeline/1.0",
+              "Accept": "application/octet-stream",
+          }
+          token = os.environ.get("MAP_SOURCE_GITHUB_TOKEN", "").strip()
+          if token:
+              headers["Authorization"] = f"Bearer {token}"
+
+          response = requests.get(url, headers=headers, stream=True, allow_redirects=False, timeout=(30, 300))
+          if response.is_redirect:
+              download_url = response.headers.get("Location")
+              response.close()
+              if not download_url or urlparse(download_url).scheme != "https":
+                  raise SystemExit("GitHub returned an invalid or insecure download redirect")
+              # The bearer token is deliberately not forwarded to the signed asset host.
+              response = requests.get(
+                  download_url,
+                  headers={"User-Agent": "Voxygen-Map-Pipeline/1.0"},
+                  stream=True,
+                  allow_redirects=True,
+                  timeout=(30, 300),
+              )
+          response.raise_for_status()
+          with open("work/source-map", "wb") as output:
+              for chunk in response.iter_content(chunk_size=1024 * 1024):
+                  if chunk:
+                      output.write(chunk)
+          response.close()
+          if not os.path.getsize("work/source-map"):
+              raise SystemExit("The downloaded source image is empty")
+          PY
       - name: Generate Deep Zoom tiles and manifest
         env:
           MAP_VERSION: ${{ inputs.map_version }}
