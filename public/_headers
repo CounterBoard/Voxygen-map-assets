@@ -7,4 +7,4 @@
 
 /world-map/manifest.json
   Access-Control-Allow-Origin: *
-  Cache-Control: public, max-age=30, must-revalidate
+  Cache-Control: no-store
