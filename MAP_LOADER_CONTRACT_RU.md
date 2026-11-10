@@ -14,7 +14,8 @@ Manifest: GET /world-map/manifest.json
 - source.type = "url-grid"
 - source.rows = 12
 - source.columns = 12
-- source.urls = массив из 144 абсолютных публичных URL, построчно слева направо и сверху вниз
+- source.urls = массив из 144 публичных URL, построчно слева направо и сверху вниз (абсолютные или относительно manifest origin)
+- source.previewUrl — небольшое обзорное изображение, которое показывается до загрузки плиток
 
 Клиент обязан:
 1. сначала показать preview;
