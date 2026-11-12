@@ -23,12 +23,12 @@ class WorldMapCoordinateSystemTests(unittest.TestCase):
         })
         # The coordinate-system helper takes no image dimensions by design.
 
-    def test_full_builder_keeps_world_geometry_for_non_6016_raster(self):
+    def test_full_builder_keeps_world_geometry_for_different_square_resolution(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             source_image = root / "source.png"
             public_dir = root / "public"
-            Image.new("RGB", (2048, 1024), (24, 48, 72)).save(source_image, optimize=True)
+            Image.new("RGB", (2048, 2048), (24, 48, 72)).save(source_image, optimize=True)
 
             with patch.dict(os.environ, {"MAP_VERSION": "integration-test"}):
                 with patch.object(sys, "argv", ["build_map.py", str(source_image), str(public_dir)]):
@@ -39,7 +39,7 @@ class WorldMapCoordinateSystemTests(unittest.TestCase):
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
             source = manifest["source"]
             self.assertEqual(manifest["mapVersion"], "integration-test")
-            self.assertEqual((source["width"], source["height"]), (2048, 1024))
+            self.assertEqual((source["width"], source["height"]), (2048, 2048))
             self.assertEqual(source["coordinateSystem"], world_coordinate_system())
             self.assertNotIn("width", source["coordinateSystem"])
             self.assertNotIn("height", source["coordinateSystem"])
@@ -48,8 +48,22 @@ class WorldMapCoordinateSystemTests(unittest.TestCase):
             self.assertTrue((version_dir / "preview.webp").is_file())
             tiles_dir = version_dir / "tiles" / "11"
             self.assertTrue((tiles_dir / "0_0.webp").is_file())
-            self.assertTrue((tiles_dir / "3_1.webp").is_file())
+            self.assertTrue((tiles_dir / "3_3.webp").is_file())
             self.assertGreater(manifest["generated"]["tileCount"], 0)
+
+    def test_builder_rejects_non_square_raster_without_redefining_world_coordinates(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_image = root / "source.png"
+            public_dir = root / "public"
+            Image.new("RGB", (2048, 1024), (24, 48, 72)).save(source_image, optimize=True)
+
+            with patch.dict(os.environ, {"MAP_VERSION": "non-square-test"}):
+                with patch.object(sys, "argv", ["build_map.py", str(source_image), str(public_dir)]):
+                    with self.assertRaises(SystemExit) as error:
+                        main()
+            self.assertIn("must be square", str(error.exception))
+
 
 
 if __name__ == "__main__":
