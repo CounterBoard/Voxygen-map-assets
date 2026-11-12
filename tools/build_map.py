@@ -38,10 +38,12 @@ def main() -> int:
     with Image.open(source_path) as opened:
         image = ImageOps.exif_transpose(opened).convert("RGBA")
     width, height = image.size
-    if width < 512 or height < 512:
-        raise SystemExit(f"Map image is too small: {width}x{height}")
-    if width > 30000 or height > 30000:
-        raise SystemExit(f"Map dimensions exceed supported limit: {width}x{height}")
+    if width != height or width != 6001:
+        raise SystemExit(
+            f"Voxygen world map must be exactly 6001x6001 pixels; received {width}x{height}. "
+            "The coordinate origin and the current backend validation are calibrated to this geometry."
+        )
+    coordinate_origin = width // 2
 
     max_level = math.ceil(math.log2(max(width, height)))
     preview = image.copy()
@@ -82,6 +84,17 @@ def main() -> int:
             "minLevel": 0,
             "maxLevel": max_level,
             "format": "webp",
+            "coordinateSystem": {
+                "type": "minecraft-block-pixel-centers",
+                "originX": coordinate_origin,
+                "originY": coordinate_origin,
+                "minX": -coordinate_origin,
+                "maxX": coordinate_origin,
+                "minZ": -coordinate_origin,
+                "maxZ": coordinate_origin,
+                "width": width,
+                "height": height,
+            },
             "tileUrlTemplate": f"/world-map/versions/{version}/tiles/{{level}}/{{x}}_{{y}}.webp",
             "previewUrl": f"/world-map/versions/{version}/preview.webp",
         },
