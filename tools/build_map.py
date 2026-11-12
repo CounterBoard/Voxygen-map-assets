@@ -14,6 +14,25 @@ TILE_SIZE = 512
 PREVIEW_MAX = 1200
 
 
+def coordinate_system_for_dimensions(width: int, height: int) -> dict[str, int | str]:
+    if width != 6001 or height != 6001:
+        raise ValueError(
+            f"Voxygen world map must be exactly 6001x6001 pixels; received {width}x{height}."
+        )
+    origin = width // 2
+    return {
+        "type": "minecraft-block-pixel-centers",
+        "originX": origin,
+        "originY": origin,
+        "minX": -origin,
+        "maxX": origin,
+        "minZ": -origin,
+        "maxZ": origin,
+        "width": width,
+        "height": height,
+    }
+
+
 def save_webp(image: Image.Image, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path, "WEBP", lossless=True, method=6)
@@ -38,12 +57,10 @@ def main() -> int:
     with Image.open(source_path) as opened:
         image = ImageOps.exif_transpose(opened).convert("RGBA")
     width, height = image.size
-    if width != height or width != 6001:
-        raise SystemExit(
-            f"Voxygen world map must be exactly 6001x6001 pixels; received {width}x{height}. "
-            "The coordinate origin and the current backend validation are calibrated to this geometry."
-        )
-    coordinate_origin = width // 2
+    try:
+        coordinate_system = coordinate_system_for_dimensions(width, height)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
 
     max_level = math.ceil(math.log2(max(width, height)))
     preview = image.copy()
@@ -84,17 +101,7 @@ def main() -> int:
             "minLevel": 0,
             "maxLevel": max_level,
             "format": "webp",
-            "coordinateSystem": {
-                "type": "minecraft-block-pixel-centers",
-                "originX": coordinate_origin,
-                "originY": coordinate_origin,
-                "minX": -coordinate_origin,
-                "maxX": coordinate_origin,
-                "minZ": -coordinate_origin,
-                "maxZ": coordinate_origin,
-                "width": width,
-                "height": height,
-            },
+            "coordinateSystem": coordinate_system,
             "tileUrlTemplate": f"/world-map/versions/{version}/tiles/{{level}}/{{x}}_{{y}}.webp",
             "previewUrl": f"/world-map/versions/{version}/preview.webp",
         },
