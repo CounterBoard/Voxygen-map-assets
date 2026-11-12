@@ -14,6 +14,25 @@ TILE_SIZE = 512
 PREVIEW_MAX = 1200
 
 
+def coordinate_system_for_dimensions(width: int, height: int) -> dict[str, int | str]:
+    if width != 6016 or height != 6016:
+        raise ValueError(
+            f"Voxygen world map must be exactly 6016x6016 pixels; received {width}x{height}."
+        )
+    origin = width // 2
+    return {
+        "type": "minecraft-block-pixel-centers",
+        "originX": origin,
+        "originY": origin,
+        "minX": -origin,
+        "maxX": width - origin - 1,
+        "minZ": -origin,
+        "maxZ": height - origin - 1,
+        "width": width,
+        "height": height,
+    }
+
+
 def save_webp(image: Image.Image, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     image.save(path, "WEBP", lossless=True, method=6)
@@ -38,10 +57,10 @@ def main() -> int:
     with Image.open(source_path) as opened:
         image = ImageOps.exif_transpose(opened).convert("RGBA")
     width, height = image.size
-    if width < 512 or height < 512:
-        raise SystemExit(f"Map image is too small: {width}x{height}")
-    if width > 30000 or height > 30000:
-        raise SystemExit(f"Map dimensions exceed supported limit: {width}x{height}")
+    try:
+        coordinate_system = coordinate_system_for_dimensions(width, height)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
 
     max_level = math.ceil(math.log2(max(width, height)))
     preview = image.copy()
@@ -82,6 +101,7 @@ def main() -> int:
             "minLevel": 0,
             "maxLevel": max_level,
             "format": "webp",
+            "coordinateSystem": coordinate_system,
             "tileUrlTemplate": f"/world-map/versions/{version}/tiles/{{level}}/{{x}}_{{y}}.webp",
             "previewUrl": f"/world-map/versions/{version}/preview.webp",
         },
