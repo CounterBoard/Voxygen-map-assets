@@ -55,6 +55,10 @@ def main() -> int:
             f"Unsupported raster dimensions: {width}x{height}. "
             f"Each side must be between 1 and {MAX_RASTER_DIMENSION} pixels."
         )
+    if width != height:
+        raise SystemExit(
+            f"World map raster must be square to preserve equal X/Z scale; received {width}x{height}."
+        )
 
     coordinate_system = world_coordinate_system()
     max_level = math.ceil(math.log2(max(width, height)))
