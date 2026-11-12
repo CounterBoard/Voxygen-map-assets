@@ -12,24 +12,17 @@ from PIL import Image, ImageOps
 
 TILE_SIZE = 512
 PREVIEW_MAX = 1200
+MAX_RASTER_DIMENSION = 30000
 
 
-def coordinate_system_for_dimensions(width: int, height: int) -> dict[str, int | str]:
-    if width != 6016 or height != 6016:
-        raise ValueError(
-            f"Voxygen world map must be exactly 6016x6016 pixels; received {width}x{height}."
-        )
-    origin = width // 2
+def world_coordinate_system() -> dict[str, int | str]:
+    """Return Voxygen's fixed world-coordinate bounds, independent of raster size."""
     return {
-        "type": "minecraft-block-pixel-centers",
-        "originX": origin,
-        "originY": origin,
-        "minX": -origin,
-        "maxX": width - origin - 1,
-        "minZ": -origin,
-        "maxZ": height - origin - 1,
-        "width": width,
-        "height": height,
+        "type": "minecraft-world-block-centers",
+        "minX": -3008,
+        "maxX": 3007,
+        "minZ": -3008,
+        "maxZ": 3007,
     }
 
 
@@ -57,11 +50,13 @@ def main() -> int:
     with Image.open(source_path) as opened:
         image = ImageOps.exif_transpose(opened).convert("RGBA")
     width, height = image.size
-    try:
-        coordinate_system = coordinate_system_for_dimensions(width, height)
-    except ValueError as error:
-        raise SystemExit(str(error)) from error
+    if width < 1 or height < 1 or width > MAX_RASTER_DIMENSION or height > MAX_RASTER_DIMENSION:
+        raise SystemExit(
+            f"Unsupported raster dimensions: {width}x{height}. "
+            f"Each side must be between 1 and {MAX_RASTER_DIMENSION} pixels."
+        )
 
+    coordinate_system = world_coordinate_system()
     max_level = math.ceil(math.log2(max(width, height)))
     preview = image.copy()
     preview.thumbnail((PREVIEW_MAX, PREVIEW_MAX), Image.Resampling.LANCZOS)
@@ -121,7 +116,7 @@ def main() -> int:
     temp_manifest = map_root / "manifest.json.tmp"
     temp_manifest.write_text(json.dumps(manifest, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     temp_manifest.replace(map_root / "manifest.json")
-    print(f"Built {width}x{height} map: {tile_count} tiles, levels 0-{max_level}, version {version}")
+    print(f"Built {width}x{height} raster with fixed world coordinates: {tile_count} tiles, levels 0-{max_level}, version {version}")
     return 0
 
 
