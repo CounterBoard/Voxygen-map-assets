@@ -15,9 +15,9 @@ PREVIEW_MAX = 1200
 
 
 def coordinate_system_for_dimensions(width: int, height: int) -> dict[str, int | str]:
-    if width != 6001 or height != 6001:
+    if width != 6016 or height != 6016:
         raise ValueError(
-            f"Voxygen world map must be exactly 6001x6001 pixels; received {width}x{height}."
+            f"Voxygen world map must be exactly 6016x6016 pixels; received {width}x{height}."
         )
     origin = width // 2
     return {
@@ -25,9 +25,9 @@ def coordinate_system_for_dimensions(width: int, height: int) -> dict[str, int |
         "originX": origin,
         "originY": origin,
         "minX": -origin,
-        "maxX": origin,
+        "maxX": width - origin - 1,
         "minZ": -origin,
-        "maxZ": origin,
+        "maxZ": height - origin - 1,
         "width": width,
         "height": height,
     }
