@@ -65,6 +65,54 @@ class WorldMapCoordinateSystemTests(unittest.TestCase):
             self.assertIn("must be square", str(error.exception))
 
 
+    def test_generated_pyramid_has_expected_tile_count_and_valid_webp_tiles(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_image = root / "source.png"
+            public_dir = root / "public"
+            Image.new("RGB", (2048, 2048), (90, 120, 150)).save(source_image)
+
+            with patch.dict(os.environ, {"MAP_VERSION": "pyramid-test"}):
+                with patch.object(sys, "argv", ["build_map.py", str(source_image), str(public_dir)]):
+                    self.assertEqual(main(), 0)
+
+            manifest = json.loads(
+                (public_dir / "world-map" / "manifest.json").read_text(encoding="utf-8")
+            )
+            version_dir = public_dir / "world-map" / "versions" / "pyramid-test"
+            tile_files = sorted((version_dir / "tiles").glob("*/*.webp"))
+
+            # For a 2048px image and 512px tiles: ten 1-tile levels,
+            # one 2x2 level, and one 4x4 level.
+            self.assertEqual(manifest["generated"]["tileCount"], 30)
+            self.assertEqual(len(tile_files), 30)
+            for tile_path in tile_files:
+                with Image.open(tile_path) as tile:
+                    self.assertEqual(tile.format, "WEBP")
+                    self.assertLessEqual(tile.width, 512)
+                    self.assertLessEqual(tile.height, 512)
+                    self.assertGreater(tile.width, 0)
+                    self.assertGreater(tile.height, 0)
+
+            with Image.open(version_dir / "preview.webp") as preview:
+                self.assertEqual(preview.format, "WEBP")
+                self.assertLessEqual(max(preview.size), 1200)
+
+    def test_invalid_version_is_rejected_before_output_directory_is_created(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_image = root / "source.png"
+            public_dir = root / "public"
+            Image.new("RGB", (16, 16), (1, 2, 3)).save(source_image)
+
+            with patch.dict(os.environ, {"MAP_VERSION": "../unsafe"}):
+                with patch.object(sys, "argv", ["build_map.py", str(source_image), str(public_dir)]):
+                    with self.assertRaisesRegex(SystemExit, "MAP_VERSION"):
+                        main()
+
+            self.assertFalse((public_dir / "world-map").exists())
+
+
 
 if __name__ == "__main__":
     unittest.main()
