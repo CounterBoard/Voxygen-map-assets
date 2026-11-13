@@ -65,7 +65,7 @@ class ReleaseAssetDownloadTests(unittest.TestCase):
             302,
             {"Location": "https://release-assets.githubusercontent.com/assets/map.png?sig=abc"},
         )
-        asset = FakeResponse(200, {"Content-Length": "7"}, [b"map", b"-data"])
+        asset = FakeResponse(200, {"Content-Length": "8"}, [b"map", b"-data"])
         session = FakeSession(redirect, asset)
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -73,7 +73,7 @@ class ReleaseAssetDownloadTests(unittest.TestCase):
             size = downloader.download_release_asset(
                 self.SOURCE_URL, destination, token="source-token", session=session
             )
-            self.assertEqual(size, 7)
+            self.assertEqual(size, 8)
             self.assertEqual(destination.read_bytes(), b"map-data")
 
         self.assertEqual(len(session.calls), 2)
