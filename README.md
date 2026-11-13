@@ -1,44 +1,151 @@
-# Voxygen — автоматическая публикация карты
+# Voxygen — обработка и публикация карты мира
 
-Это не набор тайлов для ручной загрузки. Здесь находятся только скрипт и workflow:
-один исходный файл карты передаётся в GitHub Actions, тайлы генерируются автоматически,
-затем готовая статика публикуется в Cloudflare Worker `voxygen-map-assets`.
+Репозиторий обслуживает отдельный Worker статических ресурсов карты:
 
-## Как это будет работать после интеграции с основным Worker
+- Worker: `voxygen-map-assets`;
+- публичный базовый адрес: `https://voxygen-map-assets.counterboard.workers.dev`;
+- каталог публикации: `public/`;
+- manifest: `/world-map/manifest.json`.
 
-1. Администратор загружает один файл карты в Voxygen.
-2. Основной Worker сохраняет исходник как Release Asset в GitHub.
-3. Основной Worker вызывает `workflow_dispatch` этого репозитория, передавая URL файла и версию карты.
-4. GitHub Actions скачивает файл, запускает `tools/build_map.py` и публикует `public/` через Wrangler.
-5. Voxygen читает `/world-map/manifest.json`, затем загружает нужные тайлы по мере просмотра и масштабирования.
+Исходник карты не хранится в этом репозитории. Основной Worker загружает его в GitHub Release репозитория `CounterBoard/Voxygen-map-storage`, после чего запускает workflow этого репозитория.
 
-## Однократная настройка GitHub
+## Фактическая последовательность публикации
 
-В репозитории открой Settings → Secrets and variables → Actions → New repository secret:
+1. Главный инспектор выбирает квадратное изображение PNG, JPEG или WebP размером не более 90 000 000 байт.
+2. Frontend отправляет файл в `POST /api/map` основного Worker, передаёт Telegram Init Data, MIME-тип и `X-Map-Size`, показывает прогресс XHR.
+3. Основной Worker проверяет роль главного инспектора, MIME-тип, объявленный размер и наличие тела запроса. Файл потоково передаётся в GitHub Release `world-map` через `FixedLengthStream`.
+4. URL исходного Release Asset и MIME-тип сохраняются в D1 `app_settings`. Сама карта и тайлы в D1 не записываются.
+5. Основной Worker вызывает GitHub Actions API: workflow `.github/workflows/publish-map.yml`, событие `workflow_dispatch`, ref `main`, inputs `image_url` и `map_version`.
+6. Workflow проверяет адрес исходного Release Asset, скачивает его с ограничением 90 000 000 байт и разрешённым HTTPS redirect, не пересылая GitHub token на хост файла.
+7. `tools/build_map.py` проверяет версию и изображение, применяет EXIF orientation, требует квадратный растр и генерирует preview и многоуровневые WebP-тайлы Deep Zoom.
+8. Workflow публикует каталог `public/` в Cloudflare Worker `voxygen-map-assets` через Wrangler.
+9. Frontend опрашивает manifest до 25 минут. Когда `mapVersion` совпадает с ожидаемой версией и preview успешно декодируется, новая карта показывается в приложении.
 
-- `CLOUDFLARE_API_TOKEN` — API token Cloudflare для публикации Workers;
+Загрузка исходника и публикация готовых тайлов — разные этапы. Успешный ответ основного Worker означает, что исходник сохранён и pipeline поставлен в очередь, а не то, что публикация уже завершена.
+
+## Формат Deep Zoom
+
+Текущий manifest расположен по адресу:
+
+`GET /world-map/manifest.json`
+
+Основные поля:
+
+- `schemaVersion` — версия схемы manifest;
+- `mapVersion` — уникальная версия карты;
+- `source.type` — `deepzoom`;
+- `source.width`, `source.height` — размеры исходного растра;
+- `source.tileSize` — 512 пикселей;
+- `source.minLevel` и `source.maxLevel` — границы уровней пирамиды;
+- `source.format` — `webp`;
+- `source.coordinateSystem` — фиксированные границы Minecraft-мира;
+- `source.tileUrlTemplate` — шаблон URL с `{level}`, `{x}`, `{y}`;
+- `source.previewUrl` — URL обзорного изображения;
+- `generated.tileCount` — количество созданных тайлов.
+
+Тайлы находятся в версионном каталоге:
+
+`/world-map/versions/<mapVersion>/tiles/<level>/<x>_<y>.webp`
+
+Preview:
+
+`/world-map/versions/<mapVersion>/preview.webp`
+
+Геометрия мира не выводится из размера растра. Используется фиксированная система координат блоков Minecraft: X и Z от -3008 до 3007 включительно. Поэтому исходный растр должен быть квадратным, но его разрешение может отличаться от 6016×6016.
+
+## Генератор
+
+Файл: `tools/build_map.py`
+
+Параметры:
+
+- размер тайла — 512×512 пикселей;
+- максимальная сторона исходного растра — 30 000 пикселей;
+- preview ограничивается стороной 1200 пикселей;
+- WebP сохраняется без потерь (`lossless=True`);
+- каждый уровень строится из исходного изображения с уменьшением в 2 раза на уровень;
+- неполные крайние тайлы сохраняют фактический размер, а не дополняются до 512×512;
+- версия ограничена символами ASCII: буквы, цифры, точка, подчёркивание и дефис.
+
+Генератор записывает тайлы в версионный каталог, затем создаёт временный manifest и заменяет им `manifest.json`. Это не даёт manifest ссылаться на тайлы до окончания их локальной генерации.
+
+## Безопасная загрузка исходника
+
+Файл `tools/download_release_asset.py` используется workflow перед генератором.
+
+Он:
+- принимает только HTTPS URL Release Asset из `CounterBoard/Voxygen-map-storage`;
+- запрещает query/fragment, userinfo и произвольные пути;
+- допускает только HTTPS redirect на allowlist GitHub asset hosts;
+- не передаёт `MAP_SOURCE_GITHUB_TOKEN` на asset host;
+- запрещает цепочку дополнительных redirect;
+- проверяет `Content-Length`, если он присутствует;
+- ограничивает фактически скачанные байты 90 000 000;
+- удаляет частичный файл при ошибке и отклоняет пустой ответ.
+
+Само содержимое изображения затем проверяет Pillow в генераторе: неподдерживаемый/повреждённый файл не может завершить сборку.
+
+## Кэширование и HTTP
+
+Файл `public/_headers` задаёт:
+
+- `/world-map/versions/*`: CORS для чтения, `nosniff`, `Cache-Control: public, max-age=31536000, immutable`;
+- `/world-map/manifest.json`: `Cache-Control: no-store` и CORS.
+
+Manifest не кэшируется, чтобы клиент мог обнаружить новую версию. URL тайлов и preview содержат `mapVersion`, поэтому опубликованные ресурсы конкретной версии неизменяемы и могут долго храниться в браузерном/edge cache.
+
+Worker использует Workers Static Assets (`assets.directory = ./public`, `run_worker_first = false`). Файл `src/index.js` является fallback для запросов, которые не соответствуют опубликованному статическому ресурсу; он возвращает 404.
+
+## Будущий формат url-grid
+
+Контракт загрузчика резервирует `source.type = "url-grid"` с 12 строками, 12 столбцами и массивом из 144 URL. Клиент содержит ветку выбора тайлов для этого типа источника, однако текущий генератор создаёт только Deep Zoom, а `futureSources.urlGrid.urls` остаётся пустым. Это не действующий режим публикации.
+
+## Секреты и конфигурация
+
+Secrets репозитория:
+
+- `CLOUDFLARE_API_TOKEN` — право публикации Worker;
 - `CLOUDFLARE_ACCOUNT_ID` — Cloudflare Account ID;
-- `MAP_SOURCE_GITHUB_TOKEN` — GitHub token с `Contents: Read-only` для репозитория-источника `CounterBoard/Voxygen-map-storage` (нужен, если репозиторий с Release Asset приватный; для публичного репозитория секрет можно не задавать).
+- `MAP_SOURCE_GITHUB_TOKEN` — необязательный read token, нужен только если репозиторий исходников приватный.
 
-Для токена требуется право редактирования Workers Scripts в нужном аккаунте. Не помещайте токен в код, workflow inputs или публичные файлы.
+Secrets основного Worker `voxygen`:
 
-В основном Cloudflare Worker `voxygen` добавьте отдельный secret `MAP_PIPELINE_GITHUB_TOKEN`. Это fine-grained GitHub token с доступом к репозиторию `CounterBoard/Voxygen-map-assets` и разрешением `Actions: Read and write`. Существующий `GITHUB_TOKEN`, который загружает исходное изображение в Release, остаётся отдельным и не требует расширения прав. Если `Voxygen-map-storage` приватный, тот же источник-доступ нужно отдельно настроить в `MAP_SOURCE_GITHUB_TOKEN` в Secrets этого репозитория.
+- `GITHUB_TOKEN` — загрузка Release Asset в `Voxygen-map-storage`;
+- `MAP_PIPELINE_GITHUB_TOKEN` — запуск workflow в `Voxygen-map-assets`, разрешение Actions: read/write.
 
-## Ручной тест конвейера
+Обычные переменные основного Worker:
 
-Откройте вкладку Actions → Process and publish world map → Run workflow. Передайте:
-- `image_url`: публичный URL Release Asset с исходной картой;
-- `map_version`: уникальный идентификатор, например `map-20261110-2300`.
+- `GITHUB_OWNER = CounterBoard`;
+- `GITHUB_REPO = Voxygen-map-storage`;
+- `GITHUB_RELEASE_TAG = world-map`.
 
-После успешного запуска Cloudflare создаст Worker `voxygen-map-assets` (если его ещё нет) и опубликует manifest по адресу:
-`https://voxygen-map-assets.<ваш-subdomain>.workers.dev/world-map/manifest.json`
+Значения секретов не хранятся в коде и не должны попадать в логи или inputs workflow.
 
-`<ваш-subdomain>` нужно заменить на фактический Cloudflare account subdomain.
+## Проверки
 
-## Текущий и будущий форматы
+Workflow `.github/workflows/validate-map-pipeline.yml` запускается при push в `main`, при push в feature-ветку проверки геометрии и при pull request в `main`. Он выполняет:
 
-Сейчас manifest описывает `source.type = "deepzoom"` и URL-шаблон тайлов. В manifest предусмотрено место для будущего источника `url-grid` с 12 строками, 12 столбцами и 144 публичными URL. После появления этих URL приложение сможет выбирать подходящий адаптер источника без изменения загрузки исходной карты.
+```bash
+python -m unittest discover -s tests -p 'test_*.py' -v
+```
 
-## Состояние интеграции
+Тесты проверяют:
+- фиксированную систему координат мира;
+- генерацию manifest на квадратном изображении;
+- отказ от неквадратного растра;
+- наличие и декодируемость WebP-тайлов;
+- ожидаемое количество тайлов и размеры preview;
+- отказ от небезопасного идентификатора версии;
+- allowlist URL/redirect при скачивании Release Asset;
+- запрет передачи токена на хост загрузки;
+- ограничения объявленного и фактического размера;
+- удаление неполного файла при ошибке.
 
-Автоматический запуск из основного Worker и загрузчик Deep Zoom подготовлены в ветке `feature/automatic-deepzoom-map` основного репозитория `CounterBoard/Voxygen`. После проверки и включения этих изменений останется добавить secret `MAP_PIPELINE_GITHUB_TOKEN` в Cloudflare Worker `voxygen` и два Cloudflare secrets в этот репозиторий. До настройки секретов обработка новой карты запускаться не будет.
+Workflow `.github/workflows/publish-map.yml` — отдельный workflow публикации. Он запускается по `workflow_dispatch` и действительно развёртывает статические ресурсы в Cloudflare. Его успешное выполнение подтверждает завершение конкретного запуска публикации, но не заменяет проверку доступности ресурсов из пользовательского клиента.
+
+## Исходные репозитории
+
+- Основное приложение: https://github.com/CounterBoard/Voxygen
+- Pipeline и статические ресурсы: https://github.com/CounterBoard/Voxygen-map-assets
+- Исходники карт: https://github.com/CounterBoard/Voxygen-map-storage
+- Release исходной карты: https://github.com/CounterBoard/Voxygen-map-storage/releases/tag/world-map
