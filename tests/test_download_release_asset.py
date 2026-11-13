@@ -54,6 +54,7 @@ class ReleaseAssetDownloadTests(unittest.TestCase):
             self.SOURCE_URL + "?redirect=https://evil.example",
             "https://user@github.com/CounterBoard/Voxygen-map-storage/releases/download/tag/map.png",
             "https://github.com/CounterBoard/Voxygen-map-storage/releases/download/tag/sub/map.png",
+            "https://github.com/CounterBoard/Voxygen-map-storage/releases/download/tag/map.gif",
         ]
         for url in invalid_urls:
             with self.subTest(url=url):
