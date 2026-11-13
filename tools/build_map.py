@@ -49,6 +49,8 @@ def main() -> int:
     tiles_dir.mkdir(parents=True, exist_ok=True)
 
     with Image.open(source_path) as opened:
+        if opened.format not in {"PNG", "JPEG", "WEBP"}:
+            raise SystemExit(f"Unsupported source image format: {opened.format or 'unknown'}. Use PNG, JPEG or WebP.")
         width, height = opened.size
         if width < 1 or height < 1 or width > MAX_RASTER_DIMENSION or height > MAX_RASTER_DIMENSION:
             raise SystemExit(
