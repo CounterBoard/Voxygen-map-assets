@@ -132,6 +132,23 @@ class WorldMapCoordinateSystemTests(unittest.TestCase):
             )
 
 
+    def test_builder_rejects_unsupported_image_format(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_image = root / "source.gif"
+            public_dir = root / "public"
+            Image.new("RGB", (16, 16), (1, 2, 3)).save(source_image, format="GIF")
+
+            with patch.dict(os.environ, {"MAP_VERSION": "unsupported-format-test"}):
+                with patch.object(sys, "argv", ["build_map.py", str(source_image), str(public_dir)]):
+                    with self.assertRaisesRegex(SystemExit, "PNG, JPEG or WebP"):
+                        main()
+
+            self.assertFalse(
+                (public_dir / "world-map" / "versions" / "unsupported-format-test" / "preview.webp").exists()
+            )
+
+
 
 if __name__ == "__main__":
     unittest.main()
