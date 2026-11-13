@@ -12,7 +12,8 @@ from PIL import Image, ImageOps
 
 TILE_SIZE = 512
 PREVIEW_MAX = 1200
-MAX_RASTER_DIMENSION = 30000
+MAX_RASTER_DIMENSION = 8944
+MAX_RASTER_PIXELS = 80_000_000
 
 
 def world_coordinate_system() -> dict[str, int | str]:
@@ -48,17 +49,22 @@ def main() -> int:
     tiles_dir.mkdir(parents=True, exist_ok=True)
 
     with Image.open(source_path) as opened:
+        width, height = opened.size
+        if width < 1 or height < 1 or width > MAX_RASTER_DIMENSION or height > MAX_RASTER_DIMENSION:
+            raise SystemExit(
+                f"Unsupported raster dimensions: {width}x{height}. "
+                f"Each side must be between 1 and {MAX_RASTER_DIMENSION} pixels."
+            )
+        pixel_count = width * height
+        if pixel_count > MAX_RASTER_PIXELS:
+            raise SystemExit(
+                f"Raster exceeds maximum pixel count: {pixel_count} > {MAX_RASTER_PIXELS}."
+            )
+        if width != height:
+            raise SystemExit(
+                f"World map raster must be square to preserve equal X/Z scale; received {width}x{height}."
+            )
         image = ImageOps.exif_transpose(opened).convert("RGBA")
-    width, height = image.size
-    if width < 1 or height < 1 or width > MAX_RASTER_DIMENSION or height > MAX_RASTER_DIMENSION:
-        raise SystemExit(
-            f"Unsupported raster dimensions: {width}x{height}. "
-            f"Each side must be between 1 and {MAX_RASTER_DIMENSION} pixels."
-        )
-    if width != height:
-        raise SystemExit(
-            f"World map raster must be square to preserve equal X/Z scale; received {width}x{height}."
-        )
 
     coordinate_system = world_coordinate_system()
     max_level = math.ceil(math.log2(max(width, height)))
