@@ -44,8 +44,9 @@ def validate_source_url(url: str) -> None:
         or "/" in parts[5]
         or "\\" in parts[4]
         or "\\" in parts[5]
+        or not parts[5].lower().endswith((".png", ".jpg", ".jpeg", ".webp"))
     ):
-        raise ValueError("The source image must be an asset from CounterBoard/Voxygen-map-storage")
+        raise ValueError("The source image must be a PNG, JPEG or WebP asset from CounterBoard/Voxygen-map-storage")
 
 
 def validate_download_url(url: str) -> None:
