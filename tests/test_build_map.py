@@ -9,6 +9,7 @@ from unittest.mock import patch
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import tools.build_map as map_builder
 from tools.build_map import world_coordinate_system, main
 
 
@@ -111,6 +112,24 @@ class WorldMapCoordinateSystemTests(unittest.TestCase):
                         main()
 
             self.assertFalse((public_dir / "world-map").exists())
+
+
+    def test_builder_rejects_raster_over_pixel_budget_before_decoding(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            source_image = root / "source.png"
+            public_dir = root / "public"
+            Image.new("RGB", (11, 11), (12, 34, 56)).save(source_image)
+
+            with patch.dict(os.environ, {"MAP_VERSION": "pixel-limit-test"}):
+                with patch.object(map_builder, "MAX_RASTER_PIXELS", 100):
+                    with patch.object(sys, "argv", ["build_map.py", str(source_image), str(public_dir)]):
+                        with self.assertRaisesRegex(SystemExit, "maximum pixel count"):
+                            main()
+
+            self.assertFalse(
+                (public_dir / "world-map" / "versions" / "pixel-limit-test" / "preview.webp").exists()
+            )
 
 
 
