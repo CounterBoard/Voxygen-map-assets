@@ -59,7 +59,7 @@ jobs:
         run: |
           test -n "$CLOUDFLARE_API_TOKEN"
           test -n "$CLOUDFLARE_ACCOUNT_ID"
-          npx --yes wrangler@latest deploy
+          npx --yes wrangler@4.162.0 deploy
 
       - name: Report published version
         run: |
