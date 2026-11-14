@@ -7,4 +7,7 @@
 
 /world-map/manifest.json
   Access-Control-Allow-Origin: *
+  Access-Control-Allow-Methods: GET, HEAD, OPTIONS
+  Access-Control-Allow-Headers: Content-Type, If-None-Match
+  X-Content-Type-Options: nosniff
   Cache-Control: no-store
