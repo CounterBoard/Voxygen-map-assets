@@ -152,3 +152,21 @@ Workflow `.github/workflows/publish-map.yml` — отдельный workflow п�
 - Pipeline и статические ресурсы: https://github.com/CounterBoard/Voxygen-map-assets
 - Исходники карт: https://github.com/CounterBoard/Voxygen-map-storage
 - Release исходной карты: https://github.com/CounterBoard/Voxygen-map-storage/releases/tag/world-map
+
+
+## Границы runtime-аудита (14 ноября 2026)
+
+Статические проверки репозитория подтверждают генерацию Deep Zoom, структуру manifest, локальные размеры/форматы тайлов и конфигурацию CORS/cache в `public/_headers`. Они не доказывают фактическое поведение Cloudflare edge.
+
+Остаются отдельные runtime-проверки:
+
+- GET manifest, preview и контрольных tiles непосредственно с production Worker;
+- фактические `Content-Type`, `Cache-Control`, `Access-Control-Allow-Origin`, `X-Content-Type-Options` и conditional request/ETag;
+- соответствие `mapVersion`, `tileCount`, уровней и URL реальным опубликованным файлам;
+- поведение загрузчика в Telegram Android WebView при повороте, resize, pinch и pan;
+- публикация после dispatch, принятого GitHub, но при сбое D1 commit или deploy;
+- повторные и конкурентные dispatch с разными mapVersion.
+
+Production deployment и загрузка новой карты не выполняются в рамках статического аудита. Успешный CI workflow подтверждает тесты и dry-run, но не является доказательством доступности production tiles.
+
+Связанная документация основного приложения: `CounterBoard/Voxygen/Functional_System.txt`, разделы 34.11–34.15. Основная матрица авторизации относится к API приложения; этот репозиторий отвечает за генерацию и публикацию map-assets и не хранит пользовательские роли или D1.
